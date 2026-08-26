@@ -22,7 +22,7 @@ function esc(s) {
  *      records   {id, setId, qIndex, answer, correct, supplement, ts}  每题记录
  * -------------------------------------------------------- */
 const DB_NAME = "quiz_app";
-const DB_VER = 1;
+const DB_VER = 2;   // v2: 新增 books 表（多本书管理）
 let _db = null;
 
 function openDB() {
@@ -42,6 +42,9 @@ function openDB() {
       }
       if (!db.objectStoreNames.contains("transfers")) {
         db.createObjectStore("transfers", { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains("books")) {
+        db.createObjectStore("books", { keyPath: "id" });
       }
     };
     req.onsuccess = () => { _db = req.result; resolve(_db); };
@@ -186,6 +189,7 @@ async function onGenerate() {
       title: makeTitle(text),
       source: text,
       goal,
+      bookId: $("#book-select") ? $("#book-select").value : "",
       questions,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -741,9 +745,15 @@ async function runBatchFeedback() {
 }
 
 /* ---------------- 数据页 ---------------- */
-async function renderDataPage() {
-  const sets = await dbAll("sets");
+async function renderDataPage(book) {
+  let sets = await dbAll("sets");
   const records = await dbAll("records");
+  // 按书筛选（book 传入时只显示该书题集；bookId 为空的旧数据归"未分类"）
+  let scopeTitle = "";
+  if (book) {
+    sets = sets.filter((s) => s.bookId === book.id);
+    scopeTitle = `📖 ${book.title} · `;
+  }
 
   // 每套题的最新作答统计（每题取最新一条记录）
   let totalAnswered = 0, totalCorrect = 0, totalWrong = 0;
@@ -764,6 +774,10 @@ async function renderDataPage() {
     <div class="stat-chip"><div class="num">${totalAnswered}</div><div class="label">已答题</div></div>
     <div class="stat-chip"><div class="num">${totalWrong}</div><div class="label">当前错题</div></div>
   `;
+  const titleEl = $("#data-title");
+  if (titleEl) titleEl.textContent = scopeTitle ? `💾 ${scopeTitle}我的数据` : "💾 我的数据";
+  const allBtn = $("#btn-data-all");
+  if (allBtn) allBtn.style.display = book ? "inline-block" : "none";
 
   // 题集列表（倒序）
   const list = $("#set-list");
@@ -1098,6 +1112,53 @@ async function renderLastSet() {
   };
 }
 
+/* ---------------- 多本书管理（B1） ---------------- */
+async function renderBooks() {
+  const panel = $("#books-panel");
+  if (!panel) return;
+  const books = await dbAll("books");
+  const sets = await dbAll("sets");
+  panel.style.display = "block";
+
+  // 选择框（生成题目时归书用）
+  const sel = $("#book-select");
+  const cur = sel.value;
+  sel.innerHTML = `<option value="">（未分类）</option>` +
+    books.map((b) => `<option value="${b.id}">${esc(b.title)}</option>`).join("");
+  if (cur) sel.value = cur;
+
+  // 书列表（每本：书名 + 该书题集数 + 点按书看题集）
+  const list = $("#book-list");
+  list.innerHTML = books.map((b) => {
+    const cnt = sets.filter((s) => s.bookId === b.id).length;
+    return `<div class="book-item" data-book="${b.id}">
+      <span class="book-title">📖 ${esc(b.title)}</span>
+      <span class="book-meta">${cnt} 套题</span>
+    </div>`;
+  }).join("") || `<p class="hint">还没有书，点"➕ 新建书"开始</p>`;
+
+  // 点书 → 数据页按书筛选
+  list.querySelectorAll(".book-item").forEach((el) => {
+    el.onclick = () => {
+      const bid = el.dataset.book;
+      const book = books.find((x) => x.id === bid);
+      renderDataPage(book);
+      showView("data");
+    };
+  });
+}
+
+async function createBook() {
+  const name = prompt("书名叫什么？（如：非暴力沟通）", "");
+  if (!name || !name.trim()) return;
+  await dbPut("books", { id: uid(), title: name.trim(), createdAt: Date.now() });
+  renderBooks();
+  // 选中新建的书
+  const books = await dbAll("books");
+  const b = books.find((x) => x.title === name.trim());
+  if (b) $("#book-select").value = b.id;
+}
+
 /* ---------------- 语音输入（手机说话变文字） ----------------
  * 用浏览器自带 Web Speech API（手机 Chrome 支持中文），把说话转成文字填入输入框。
  * 需要 https（GitHub Pages 已满足）；不支持的环境按钮隐藏。
@@ -1178,7 +1239,9 @@ async function init() {
   $("#btn-ask-send").onclick = onAskSend;
   $("#btn-restart").onclick = () => startQuiz(state.currentSet, "sequence");
   $("#btn-transfer").onclick = openTransferTest;
-  $("#btn-back-home").onclick = () => { showView("home"); renderLastSet(); };
+  $("#btn-back-home").onclick = () => { showView("home"); renderLastSet(); renderBooks(); };
+  $("#btn-add-book").onclick = createBook;
+  $("#btn-data-all").onclick = () => { renderDataPage(); };
   $("#btn-settings").onclick = () => { showView("settings"); renderSettings(); };
   $("#btn-data").onclick = () => { showView("data"); renderDataPage(); };
   $("#btn-prompt").onclick = () => { showView("prompt"); renderPromptPage(); };
@@ -1191,7 +1254,7 @@ async function init() {
   // 底部导航
   $$(".tab").forEach((t) => t.onclick = () => {
     const v = t.dataset.view;
-    if (v === "home") renderLastSet();
+    if (v === "home") { renderLastSet(); renderBooks(); }
     if (v === "data") renderDataPage();
     if (v === "settings") renderSettings();
     if (v === "prompt") renderPromptPage();
@@ -1208,8 +1271,9 @@ async function init() {
   setupVoiceInput("btn-voice-ask", "ask-ai-input");
   setupVoiceInput("btn-voice-transfer", "transfer-input");
 
-  // 首页最近一套
+  // 首页最近一套 + 我的书
   renderLastSet();
+  renderBooks();
 
   // 注册 Service Worker（离线能力）
   if ("serviceWorker" in navigator) {

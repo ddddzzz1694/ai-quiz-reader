@@ -46,6 +46,17 @@
 
     <div id="gen-status" class="status-area"></div>
 
+    <div id="books-panel" class="card" style="display:none">
+      <div class="books-head">
+        <h3>📚 我的书</h3>
+        <button id="btn-add-book" class="btn-mini">➕ 新建书</button>
+      </div>
+      <select id="book-select" class="book-select">
+        <option value="">（未分类）</option>
+      </select>
+      <div id="book-list" class="book-list"></div>
+    </div>
+
     <div id="last-set" class="card" style="display:none">
       <h3>📖 最近一套题</h3>
       <div id="last-set-info"></div>
@@ -151,7 +162,8 @@
   <!-- ④ 数据页 -->
   <section id="view-data" class="view">
     <div class="card">
-      <h2>💾 我的数据</h2>
+      <h2 id="data-title">💾 我的数据</h2>
+      <button id="btn-data-all" class="btn-mini" style="display:none">← 返回全部</button>
       <div id="data-stats" class="data-stats"></div>
       <h3>📚 已生成的题集</h3>
       <div id="set-list" class="set-list"></div>
