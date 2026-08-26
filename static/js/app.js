@@ -966,6 +966,10 @@ async function loadSetCache(setId) {
 
 /* ---------------- 导出/导入 ---------------- */
 async function onExport() {
+  const fmt = prompt("导出格式：\n1. JSON（备份/恢复用）\n2. Markdown（阅读用）\n3. 纯文本", "1");
+  if (fmt === "2") return exportMarkdown();
+  if (fmt === "3") return exportPlainText();
+  // 默认 JSON 备份
   const sets = await dbAll("sets");
   const records = await dbAll("records");
   const settings = await loadSettings();
@@ -973,7 +977,7 @@ async function onExport() {
     app: "AI出题读书法",
     version: 1,
     exportedAt: new Date().toISOString(),
-    settings: { count: settings.count, order: settings.order },
+    settings: { count: settings.count, order: settings.order, dailyGoal: settings.dailyGoal || 0 },
     sets,
     records,
   };
@@ -981,6 +985,59 @@ async function onExport() {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = `AI出题读书法_备份_${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+}
+
+/* 导出 Markdown（阅读用）：每套题+解析+我的最新作答 */
+async function exportMarkdown() {
+  const sets = await dbAll("sets");
+  const records = await dbAll("records");
+  let md = `# AI出题读书法 导出\n\n> 导出时间：${new Date().toLocaleString("zh-CN")}\n\n`;
+  for (const s of sets) {
+    md += `## ${s.title}\n\n`;
+    const mine = records.filter((r) => r.setId === s.id).sort((a, b) => a.ts - b.ts);
+    const latest = new Map();
+    for (const r of mine) latest.set(r.qIndex, r);
+    s.questions.forEach((q, i) => {
+      md += `### ${i + 1}. ${q.question}\n\n`;
+      q.options.forEach((o, j) => md += `- ${String.fromCharCode(65 + j)}. ${o}\n`);
+      const r = latest.get(i);
+      md += `\n**正确答案**：${q.answer}\n\n**解析**：${q.explanation || ""}\n\n`;
+      if (r) md += `**我的作答**：${r.answer}（${r.correct ? "对" : "错"}）${r.supplement ? " · 感想：" + r.supplement : ""}${r.aiComment ? "\n\n**AI 点评**：" + r.aiComment : ""}\n\n`;
+      md += `---\n\n`;
+    });
+  }
+  downloadText(md, `AI出题读书法_${new Date().toISOString().slice(0, 10)}.md`, "text/markdown");
+}
+
+/* 导出纯文本 */
+async function exportPlainText() {
+  const sets = await dbAll("sets");
+  const records = await dbAll("records");
+  let txt = `AI出题读书法 导出\n导出时间：${new Date().toLocaleString("zh-CN")}\n\n`;
+  for (const s of sets) {
+    txt += `【${s.title}】\n`;
+    const mine = records.filter((r) => r.setId === s.id).sort((a, b) => a.ts - b.ts);
+    const latest = new Map();
+    for (const r of mine) latest.set(r.qIndex, r);
+    s.questions.forEach((q, i) => {
+      txt += `${i + 1}. ${q.question}\n`;
+      q.options.forEach((o, j) => txt += `   ${String.fromCharCode(65 + j)}. ${o}\n`);
+      txt += `   答案：${q.answer} 解析：${q.explanation || ""}\n`;
+      const r = latest.get(i);
+      if (r) txt += `   我的作答：${r.answer}（${r.correct ? "对" : "错"}）${r.supplement ? "感想：" + r.supplement : ""}\n`;
+    });
+    txt += "\n";
+  }
+  downloadText(txt, `AI出题读书法_${new Date().toISOString().slice(0, 10)}.txt`, "text/plain");
+}
+
+function downloadText(content, filename, mime) {
+  const blob = new Blob([content], { type: mime + ";charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 3000);
 }
