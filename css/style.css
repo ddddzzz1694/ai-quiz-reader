@@ -1,0 +1,389 @@
+/* ============ AI出题读书法 样式 ============ */
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+:root {
+  --primary: #2196F3;
+  --primary-dark: #1976D2;
+  --bg: #f0f2f5;
+  --card: #ffffff;
+  --text: #1a1a2e;
+  --text-light: #6b7280;
+  --green: #2e7d32;
+  --green-bg: #e8f5e9;
+  --red: #c62828;
+  --red-bg: #ffebee;
+  --orange: #e65100;
+  --orange-bg: #fff3e0;
+  --radius: 14px;
+}
+
+html { font-size: 16px; }
+body {
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  padding-bottom: 70px; /* 给底部导航留空间 */
+  max-width: 600px;
+  margin: 0 auto;
+  min-height: 100vh;
+}
+
+/* ---------- 顶部栏 ---------- */
+#topbar {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15);
+}
+.topbar-inner {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px;
+  max-width: 600px; margin: 0 auto;
+}
+.logo { font-size: 1.05rem; font-weight: 600; }
+.net-badge { font-size: .75rem; padding: 3px 10px; border-radius: 20px; background: rgba(255,255,255,.2); }
+.net-badge.offline { background: rgba(0,0,0,.3); }
+
+/* ---------- 卡片 ---------- */
+.card {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 20px 18px;
+  margin: 12px 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+}
+.card h2 { font-size: 1.25rem; margin-bottom: 6px; }
+.card h3 { font-size: 1.05rem; margin: 16px 0 8px; }
+.hint { color: var(--text-light); font-size: .85rem; line-height: 1.6; margin: 6px 0 12px; }
+
+/* ---------- 输入区 ---------- */
+textarea {
+  width: 100%;
+  border: 1.5px solid #d1d5db;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 1rem;
+  font-family: inherit;
+  line-height: 1.6;
+  resize: vertical;
+  background: #fafafa;
+}
+textarea:focus { outline: none; border-color: var(--primary); background: #fff; }
+.mono { font-family: "Consolas", "Courier New", monospace; font-size: .85rem; }
+
+/* ---------- 按钮（手机友好，够大） ---------- */
+.btn-primary, .btn-secondary, .btn-mini {
+  border: none; border-radius: 10px;
+  cursor: pointer;
+  font-size: 1rem;
+  font-family: inherit;
+  transition: transform .05s, background .15s;
+}
+.btn-primary:active, .btn-secondary:active, .btn-mini:active { transform: scale(.97); }
+
+.btn-big {
+  width: 100%;
+  padding: 16px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-top: 10px;
+}
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:active { background: var(--primary-dark); }
+.btn-secondary {
+  background: #e8eef5; color: var(--text);
+  padding: 12px 16px;
+  margin-top: 8px;
+}
+.btn-secondary:active { background: #d5dfea; }
+
+.mini-row { display: flex; gap: 8px; margin-top: 10px; }
+.btn-mini {
+  flex: 1;
+  background: #f0f4f8; color: var(--text);
+  padding: 10px 8px;
+  font-size: .85rem;
+}
+.btn-mini:active { background: #e0e8f0; }
+
+/* ---------- 状态区 ---------- */
+.status-area { margin: 8px 12px; font-size: .9rem; line-height: 1.6; }
+.status-area .error { color: var(--red); }
+.status-area .ok { color: var(--green); }
+.status-area .loading { color: var(--primary); }
+
+/* ---------- 刷题页 ---------- */
+.quiz-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 16px 4px;
+  font-weight: 600; font-size: .95rem;
+  color: var(--text-light);
+}
+.quiz-question { font-size: 1.1rem; line-height: 1.7; font-weight: 500; }
+
+.quiz-options { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+.option-btn {
+  display: flex; align-items: flex-start; gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 14px;
+  border: 1.5px solid #d1d5db;
+  border-radius: 10px;
+  background: #fff;
+  font-size: .98rem;
+  font-family: inherit;
+  line-height: 1.6;
+  cursor: pointer;
+  transition: all .12s;
+}
+.option-btn .opt-letter {
+  flex-shrink: 0;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: #f0f4f8;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: .85rem;
+  color: var(--text-light);
+}
+.option-btn.selected { border-color: var(--primary); background: #e3f2fd; }
+.option-btn.selected .opt-letter { background: var(--primary); color: #fff; }
+.option-btn.correct { border-color: var(--green); background: var(--green-bg); }
+.option-btn.correct .opt-letter { background: var(--green); color: #fff; }
+.option-btn.wrong { border-color: var(--red); background: var(--red-bg); }
+.option-btn.wrong .opt-letter { background: var(--red); color: #fff; }
+.option-btn.disabled { cursor: default; }
+
+.supplement-box { margin-top: 12px; }
+.supplement-box textarea { font-size: .9rem; }
+
+.quiz-feedback { margin-top: 12px; }
+.verdict { font-weight: 700; font-size: 1.05rem; margin-bottom: 8px; }
+.verdict.correct { color: var(--green); }
+.verdict.wrong { color: var(--red); }
+.explanation {
+  background: var(--orange-bg);
+  border-left: 4px solid var(--orange);
+  padding: 12px;
+  border-radius: 0 8px 8px 0;
+  font-size: .92rem;
+  line-height: 1.7;
+  color: #4e342e;
+}
+
+.done-card { text-align: center; padding: 30px 20px; }
+.done-card h2 { font-size: 1.5rem; margin-bottom: 10px; }
+.done-card p { font-size: 1rem; color: var(--text); margin-bottom: 16px; }
+
+/* ---------- 设置页 ---------- */
+.field-label { display: block; font-weight: 600; margin: 10px 0 6px; font-size: .95rem; }
+input[type="password"], input[type="text"] {
+  width: 100%;
+  padding: 12px;
+  border: 1.5px solid #d1d5db;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-family: inherit;
+}
+input:focus { outline: none; border-color: var(--primary); }
+hr { border: none; border-top: 1px solid #e5e7eb; margin: 16px 0; }
+
+.stepper { display: flex; align-items: center; gap: 14px; margin-top: 6px; }
+.stepper-btn {
+  width: 44px; height: 44px;
+  border-radius: 10px;
+  border: 1.5px solid #d1d5db;
+  background: #fff;
+  font-size: 1.4rem;
+  cursor: pointer;
+}
+.stepper-btn:active { background: #f0f4f8; }
+.stepper-val { font-size: 1.3rem; font-weight: 700; min-width: 40px; text-align: center; }
+
+.seg { display: flex; gap: 8px; margin-top: 6px; }
+.seg-btn {
+  flex: 1;
+  padding: 12px 8px;
+  border: 1.5px solid #d1d5db;
+  border-radius: 10px;
+  background: #fff;
+  font-size: .92rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+.seg-btn.active { border-color: var(--primary); background: #e3f2fd; color: var(--primary-dark); font-weight: 600; }
+
+/* ---------- 数据页 ---------- */
+.data-stats {
+  display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0;
+}
+.stat-chip {
+  flex: 1; min-width: 90px;
+  background: #f0f4f8;
+  border-radius: 10px;
+  padding: 12px 8px;
+  text-align: center;
+}
+.stat-chip .num { font-size: 1.3rem; font-weight: 700; color: var(--primary-dark); }
+.stat-chip .label { font-size: .78rem; color: var(--text-light); margin-top: 2px; }
+
+.set-item {
+  background: #f8fafc;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 8px;
+  border: 1px solid #e5e7eb;
+}
+.set-item .set-title { font-weight: 600; font-size: .95rem; }
+.set-item .set-meta { font-size: .8rem; color: var(--text-light); margin-top: 4px; }
+.set-item .set-actions { display: flex; gap: 8px; margin-top: 8px; }
+
+/* ---------- 出题规则页 ---------- */
+.prompt-history { margin-top: 8px; }
+.hist-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  margin-bottom: 6px;
+  border: 1px solid #e5e7eb;
+  font-size: .88rem;
+}
+.hist-item .hist-time { color: var(--text-light); }
+.hist-item button {
+  background: none; border: none; color: var(--primary);
+  cursor: pointer; font-size: .85rem; margin-left: 10px;
+  font-family: inherit;
+}
+
+/* ---------- 底部导航 ---------- */
+#tabbar {
+  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 100%; max-width: 600px;
+  display: flex;
+  background: #fff;
+  border-top: 1px solid #e5e7eb;
+  box-shadow: 0 -2px 8px rgba(0,0,0,.05);
+  z-index: 100;
+}
+.tab {
+  flex: 1;
+  padding: 12px 4px 14px;
+  border: none;
+  background: none;
+  font-size: .8rem;
+  color: var(--text-light);
+  cursor: pointer;
+  font-family: inherit;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.tab.active { color: var(--primary); font-weight: 600; }
+
+/* ---------- 视图切换 ---------- */
+.view { display: none; }
+.view.active { display: block; }
+
+/* ---------- 加载动画 ---------- */
+.loading-spinner {
+  display: inline-block;
+  width: 18px; height: 18px;
+  border: 3px solid rgba(33,150,243,.25);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* 桌面端加宽（电脑屏幕大，信息可以多一点） */
+@media (min-width: 900px) {
+  body { max-width: 720px; }
+  #app { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+  .view { grid-column: 1 / -1; }
+  #view-home, #view-quiz { grid-column: 1; }
+  #view-data, #view-settings, #view-prompt { grid-column: 2; }
+  #view-home.active, #view-quiz.active { display: block; }
+  #view-data.active, #view-settings.active, #view-prompt.active { display: block; }
+}
+
+/* ---- 上传 txt ---- */
+.upload-row { display: flex; align-items: center; gap: 10px; margin: 10px 0 14px; }
+.btn-upload { flex-shrink: 0; }
+#upload-name { font-size: 13px; color: #666; line-height: 1.4; flex: 1; }
+
+/* ---- AI 点评 ---- */
+.ai-feedback { margin-top: 12px; padding: 12px; background: #e3f2fd; border-radius: 10px; border-left: 4px solid #2196F3; }
+.ai-fb-title { font-weight: 600; color: #1565c0; margin-bottom: 6px; }
+.ai-fb-body { font-size: 14px; line-height: 1.6; color: #333; }
+
+/* ---- 答题明细弹层 ---- */
+.detail-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 999; display: flex; align-items: center; justify-content: center; padding: 14px; }
+.detail-panel { background: #fff; border-radius: 14px; max-width: 640px; width: 100%; max-height: 86vh; display: flex; flex-direction: column; overflow: hidden; }
+.detail-title { padding: 14px 16px; font-size: 16px; font-weight: 600; border-bottom: 1px solid #eee; }
+.detail-body { padding: 14px 16px; overflow-y: auto; flex: 1; }
+.detail-panel .btn-primary { margin: 12px 16px; }
+.dv-item { padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+.dv-item:last-child { border-bottom: none; }
+.dv-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; font-size: 14px; }
+.dv-q { flex: 1 1 100%; margin: 4px 0; }
+.dv-ok { color: #2e7d32; font-weight: 600; }
+.dv-no { color: #c62828; font-weight: 600; }
+.dv-na { color: #999; }
+.dv-ans { color: #555; font-size: 13px; }
+.dv-time { color: #aaa; font-size: 12px; }
+.dv-sup { margin: 6px 0 0 8px; padding: 6px 10px; background: #fff8e1; border-radius: 8px; font-size: 13px; color: #6d4c00; }
+.dv-exp { margin: 6px 0 0 8px; font-size: 13px; color: #555; }
+.dv-correct { font-weight: 600; color: #1565c0; }
+
+/* ---- 答题明细：历次作答 ---- */
+.dv-attempt { margin: 6px 0 6px 8px; padding: 8px 10px; background: #f7f9fb; border-radius: 8px; border-left: 3px solid #ddd; }
+.dv-attempt .dv-head { flex-wrap: wrap; }
+.dv-count { display: inline-block; font-size: 11px; color: #1976d2; background: #e3f2fd; border-radius: 10px; padding: 1px 8px; margin-right: 6px; vertical-align: middle; }
+.dv-ai { margin-top: 6px; padding: 8px 10px; background: #e3f2fd; border-radius: 8px; font-size: 13px; color: #1565c0; }
+
+/* ---- 追问 AI ---- */
+.ask-history { display: flex; flex-direction: column; gap: 8px; }
+.ask-row { background: #f7f9fb; border-radius: 8px; padding: 8px 10px; }
+.ask-q { color: #333; font-size: 14px; margin-bottom: 4px; }
+.ask-a { color: #1565c0; font-size: 13px; line-height: 1.5; }
+
+/* ---- 远迁移 ---- */
+.transfer-example { background: #e8f5e9; border-radius: 8px; padding: 10px 12px; margin: 10px 0; font-size: 13px; color: #2e7d32; }
+.transfer-ex-title { font-weight: 600; margin-bottom: 6px; }
+.transfer-result { font-size: 14px; }
+#transfer-input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 10px; font-size: 14px; box-sizing: border-box; margin: 8px 0; }
+
+/* ---- 语音输入按钮 ---- */
+.supplement-box { position: relative; }
+.btn-voice { position: absolute; right: 8px; bottom: 8px; width: 40px; height: 40px; border-radius: 50%; border: none; background: #2196F3; color: #fff; font-size: 18px; cursor: pointer; }
+#ask-ai-box { position: relative; }
+#transfer-input + .btn-voice, .detail-panel .btn-voice { position: absolute; right: 24px; }
+
+/* ---- 多本书管理 ---- */
+.books-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.books-head h3 { margin: 0; }
+.book-select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 10px; font-size: 14px; margin-bottom: 10px; box-sizing: border-box; }
+.book-list { display: flex; flex-direction: column; gap: 8px; }
+.book-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: #f7f9fb; border-radius: 10px; cursor: pointer; }
+.book-title { font-size: 14px; font-weight: 500; }
+.book-meta { font-size: 12px; color: #888; }
+
+/* ---- 错题本 ---- */
+.wrong-group { margin-bottom: 14px; }
+.wrong-group-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+.wrong-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 12px; background: #fff8f8; border-radius: 10px; margin-bottom: 6px; }
+.wrong-q { font-size: 13px; flex: 1; }
+
+/* ---- 每日目标 ---- */
+.daily-inner { display: flex; align-items: center; gap: 10px; }
+#daily-text { font-size: 14px; font-weight: 600; white-space: nowrap; }
+.daily-bar { flex: 1; height: 10px; background: #eee; border-radius: 5px; overflow: hidden; }
+.daily-fill { height: 100%; background: #2196F3; border-radius: 5px; transition: width .3s; }
+
+/* ---- 统计看板 ---- */
+.stats-box { margin-top: 12px; }
+.stats-svg { background: #fff; border-radius: 10px; padding: 8px; margin-bottom: 10px; }
+.stats-svg svg { width: 100%; height: auto; }
+.stat-book-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.stat-book-row span:first-child { flex: 0 0 90px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stat-rate { font-size: 12px; color: #666; white-space: nowrap; }
