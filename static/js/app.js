@@ -1269,6 +1269,100 @@ function changeGoal(delta) {
   renderDailyGoal();
 }
 
+/* ---------------- 统计看板（B4，纯 SVG 折线不引库） ---------------- */
+async function renderStats() {
+  const sets = await dbAll("sets");
+  const records = await dbAll("records");
+  const books = await dbAll("books");
+
+  // 近 7 天每日 对/错/总
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const start = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const end = start + 86400000;
+    const dayRecs = records.filter((r) => r.ts >= start && r.ts < end);
+    const c = dayRecs.filter((r) => r.correct).length;
+    days.push({ label: `${d.getMonth() + 1}/${d.getDate()}`, total: dayRecs.length, correct: c });
+  }
+  // 总天数（有作答的天数）
+  const daySet = new Set(records.map((r) => new Date(r.ts).toDateString()));
+  const totalDays = daySet.size;
+
+  // 每本书掌握度（最新作答对错率）
+  const bookStats = books.map((b) => {
+    const bSets = sets.filter((s) => s.bookId === b.id);
+    let c = 0, w = 0;
+    for (const s of bSets) {
+      const mine = records.filter((r) => r.setId === s.id).sort((x, y) => x.ts - y.ts);
+      const latest = new Map();
+      for (const r of mine) latest.set(r.qIndex, r);
+      for (const r of latest.values()) { if (r.correct) c++; else w++; }
+    }
+    return { title: b.title, rate: (c + w) ? Math.round((c / (c + w)) * 100) : 0, total: c + w };
+  });
+  // 未分类
+  {
+    let c = 0, w = 0;
+    for (const s of sets) {
+      if (s.bookId) continue;
+      const mine = records.filter((r) => r.setId === s.id).sort((x, y) => x.ts - y.ts);
+      const latest = new Map();
+      for (const r of mine) latest.set(r.qIndex, r);
+      for (const r of latest.values()) { if (r.correct) c++; else w++; }
+    }
+    if (c + w > 0) bookStats.push({ title: "未分类", rate: Math.round((c / (c + w)) * 100), total: c + w });
+  }
+
+  // SVG 折线（近 7 天正确率）
+  const W = 300, H = 100, PAD = 10;
+  const maxTotal = Math.max(1, ...days.map((d) => d.total));
+  const pts = days.map((d, i) => {
+    const x = PAD + (i * (W - 2 * PAD)) / 6;
+    const y = H - PAD - (d.total / maxTotal) * (H - 2 * PAD);
+    return { x: Math.round(x), y: Math.round(y), d };
+  });
+  const line = pts.map((p, i) => `${i ? "L" : "M"}${p.x},${p.y}`).join(" ");
+  const labels = days.map((d, i) => `<text x="${pts[i].x}" y="${H - 2}" font-size="9" text-anchor="middle" fill="#888">${d.label}</text>`).join("");
+  const dots = pts.map((p, i) => `<circle cx="${p.x}" cy="${p.y}" r="3" fill="#2196F3"><title>${p.d.label}: 共${p.d.total}题 对${p.d.correct}</title></circle>`).join("");
+  const svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+    <line x1="${PAD}" y1="${H - PAD}" x2="${W - PAD}" y2="${H - PAD}" stroke="#ddd"/>
+    <path d="${line}" fill="none" stroke="#2196F3" stroke-width="2"/>
+    ${dots}${labels}
+  </svg>`;
+
+  $("#data-stats").innerHTML = `
+    <div class="stat-chip"><div class="num">${records.length}</div><div class="label">总答题</div></div>
+    <div class="stat-chip"><div class="num">${totalDays}</div><div class="label">刷题天数</div></div>
+    <div class="stat-chip"><div class="num">${Math.round((records.filter(r=>r.correct).length / Math.max(1, records.length)) * 100)}%</div><div class="label">总正确率</div></div>
+  `;
+  const list = $("#set-list");
+  list.style.display = "none";
+  $("#wrong-list").style.display = "none";
+  $("#data-title").textContent = "📊 统计";
+  const statsBox = document.createElement("div");
+  statsBox.className = "stats-box";
+  statsBox.innerHTML = `
+    <h3>📈 近 7 天答题量</h3>
+    <div class="stats-svg">${svg}</div>
+    <h3>📖 每本书掌握度</h3>
+    ${bookStats.length ? bookStats.map((b) => `
+      <div class="stat-book-row">
+        <span>${esc(b.title)}</span>
+        <div class="daily-bar"><div class="daily-fill" style="width:${b.rate}%;background:${b.rate >= 70 ? "#4caf50" : b.rate >= 40 ? "#ff9800" : "#f44336"}"></div></div>
+        <span class="stat-rate">${b.rate}% (${b.total}题)</span>
+      </div>`).join("") : `<p class="hint">还没有书的数据</p>`}
+    <button class="btn-primary btn-big" id="stats-back">返回</button>
+  `;
+  statsBox.querySelector("#stats-back").onclick = exitWrongBook;
+  // 替换统计区
+  const statsArea = $("#data-stats").parentElement;
+  const oldBox = statsArea.querySelector(".stats-box");
+  if (oldBox) oldBox.remove();
+  statsArea.appendChild(statsBox);
+}
+
 /* ---------------- 语音输入（手机说话变文字） ----------------
  * 用浏览器自带 Web Speech API（手机 Chrome 支持中文），把说话转成文字填入输入框。
  * 需要 https（GitHub Pages 已满足）；不支持的环境按钮隐藏。
@@ -1355,6 +1449,7 @@ async function init() {
   $("#btn-add-book").onclick = createBook;
   $("#btn-data-all").onclick = () => { renderDataPage(); };
   $("#btn-wrong-book").onclick = renderWrongBook;
+  $("#btn-stats-view").onclick = renderStats;
   $("#btn-settings").onclick = () => { showView("settings"); renderSettings(); };
   $("#btn-data").onclick = () => { showView("data"); renderDataPage(); };
   $("#btn-prompt").onclick = () => { showView("prompt"); renderPromptPage(); };
