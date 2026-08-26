@@ -57,6 +57,13 @@
       <div id="book-list" class="book-list"></div>
     </div>
 
+    <div id="daily-progress" class="card" style="display:none">
+      <div class="daily-inner">
+        <span id="daily-text">今日 0/0</span>
+        <div class="daily-bar"><div id="daily-fill" class="daily-fill" style="width:0%"></div></div>
+      </div>
+    </div>
+
     <div id="last-set" class="card" style="display:none">
       <h3>📖 最近一套题</h3>
       <div id="last-set-info"></div>
@@ -141,6 +148,14 @@
       <div class="seg" id="seg-feedback">
         <button data-feedback="now" class="seg-btn active">每题当时点评</button>
         <button data-feedback="after" class="seg-btn">刷完统一评</button>
+      </div>
+
+      <hr>
+      <label class="field-label">每日目标（0=不设）</label>
+      <div class="stepper">
+        <button id="btn-goal-minus" class="stepper-btn">−</button>
+        <span id="goal-value" class="stepper-val">0</span>
+        <button id="btn-goal-plus" class="stepper-btn">＋</button>
       </div>
 
       <hr>

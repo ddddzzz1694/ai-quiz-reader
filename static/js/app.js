@@ -78,7 +78,7 @@ async function dbClear(store) {
 }
 
 /* ---------------- 设置读写 ---------------- */
-const DEFAULT_SETTINGS = { apiKey: "", count: 10, order: "sequence", difficulty: "auto", types: "choice", feedbackMode: "now" };
+const DEFAULT_SETTINGS = { apiKey: "", count: 10, order: "sequence", difficulty: "auto", types: "choice", feedbackMode: "now", dailyGoal: 0 };
 
 async function loadSettings() {
   const s = { ...DEFAULT_SETTINGS };
@@ -1008,6 +1008,7 @@ async function onImport(file) {
 async function renderSettings() {
   $("#set-apikey").value = state.settings.apiKey || "";
   $("#count-value").textContent = state.settings.count;
+  $("#goal-value").textContent = state.settings.dailyGoal || 0;
   $$("#seg-order .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.order === state.settings.order));
   $$("#seg-difficulty .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.difficulty === state.settings.difficulty));
   $$("#seg-types .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.types === state.settings.types));
@@ -1237,6 +1238,37 @@ async function exitWrongBook() {
   renderDataPage();
 }
 
+/* ---------------- 每日目标（B3） ---------------- */
+async function renderDailyGoal() {
+  const goal = state.settings.dailyGoal || 0;
+  const el = $("#daily-progress");
+  if (!el) return;
+  if (!goal) { el.style.display = "none"; return; }
+  el.style.display = "block";
+  // 今日已答
+  const records = await dbAll("records");
+  const today = new Date();
+  const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const todayCount = records.filter((r) => r.ts >= startOfDay).length;
+  const pct = Math.min(100, Math.round((todayCount / goal) * 100));
+  $("#daily-text").textContent = `🎯 今日 ${todayCount}/${goal} 题`;
+  $("#daily-fill").style.width = pct + "%";
+  $("#daily-fill").style.background = pct >= 100 ? "#4caf50" : "#2196F3";
+  if (pct >= 100 && !sessionStorage.getItem("goalPraise")) {
+    sessionStorage.setItem("goalPraise", "1");
+    setStatus("gen-status", `<span class="ok">🎉 今日目标达成！明天继续～</span>`, "ok");
+  }
+}
+
+function changeGoal(delta) {
+  let g = (state.settings.dailyGoal || 0) + delta;
+  g = Math.max(0, Math.min(100, g));
+  state.settings.dailyGoal = g;
+  $("#goal-value").textContent = g;
+  saveSetting("dailyGoal", g);
+  renderDailyGoal();
+}
+
 /* ---------------- 语音输入（手机说话变文字） ----------------
  * 用浏览器自带 Web Speech API（手机 Chrome 支持中文），把说话转成文字填入输入框。
  * 需要 https（GitHub Pages 已满足）；不支持的环境按钮隐藏。
@@ -1283,6 +1315,8 @@ async function init() {
   $("#count-value").textContent = state.settings.count;
   $("#btn-count-minus").onclick = () => changeCount(-1);
   $("#btn-count-plus").onclick = () => changeCount(1);
+  $("#btn-goal-minus").onclick = () => changeGoal(-1);
+  $("#btn-goal-plus").onclick = () => changeGoal(1);
   $("#btn-save-key").onclick = onSaveKey;
   $$("#seg-order .seg-btn").forEach((b) => b.onclick = () => {
     $$("#seg-order .seg-btn").forEach((x) => x.classList.remove("active"));
@@ -1317,7 +1351,7 @@ async function init() {
   $("#btn-ask-send").onclick = onAskSend;
   $("#btn-restart").onclick = () => startQuiz(state.currentSet, "sequence");
   $("#btn-transfer").onclick = openTransferTest;
-  $("#btn-back-home").onclick = () => { showView("home"); renderLastSet(); renderBooks(); };
+  $("#btn-back-home").onclick = () => { showView("home"); renderLastSet(); renderBooks(); renderDailyGoal(); };
   $("#btn-add-book").onclick = createBook;
   $("#btn-data-all").onclick = () => { renderDataPage(); };
   $("#btn-wrong-book").onclick = renderWrongBook;
@@ -1333,7 +1367,7 @@ async function init() {
   // 底部导航
   $$(".tab").forEach((t) => t.onclick = () => {
     const v = t.dataset.view;
-    if (v === "home") { renderLastSet(); renderBooks(); }
+    if (v === "home") { renderLastSet(); renderBooks(); renderDailyGoal(); }
     if (v === "data") renderDataPage();
     if (v === "settings") renderSettings();
     if (v === "prompt") renderPromptPage();
@@ -1350,9 +1384,10 @@ async function init() {
   setupVoiceInput("btn-voice-ask", "ask-ai-input");
   setupVoiceInput("btn-voice-transfer", "transfer-input");
 
-  // 首页最近一套 + 我的书
+  // 首页最近一套 + 我的书 + 今日进度
   renderLastSet();
   renderBooks();
+  renderDailyGoal();
 
   // 注册 Service Worker（离线能力）
   if ("serviceWorker" in navigator) {
