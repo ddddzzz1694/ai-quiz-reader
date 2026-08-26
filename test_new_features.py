@@ -5,7 +5,7 @@ import time
 
 INJECT = """
 () => new Promise((resolve) => {
-    const req = indexedDB.open('quiz_app', 1);
+    const req = indexedDB.open('quiz_app', 2);
     req.onupgradeneeded = (e) => {
         const db = e.target.result;
         if (!db.objectStoreNames.contains('sets')) db.createObjectStore('sets', {keyPath:'id'});
@@ -50,7 +50,7 @@ with sync_playwright() as p:
     page.click('[data-difficulty="easy"]')
     time.sleep(0.8)
     saved = page.evaluate("""async () => {
-        const req = indexedDB.open('quiz_app', 1);
+        const req = indexedDB.open('quiz_app', 2);
         return new Promise((res) => { req.onsuccess = () => {
             const db = req.result;
             const g = db.transaction('settings').objectStore('settings').get('difficulty');

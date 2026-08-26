@@ -37,7 +37,7 @@ with sync_playwright() as p:
 
     # 5. 离线状态下刷题界面可用（数据在 IndexedDB 本地）
     page.evaluate("""() => new Promise((resolve, reject) => {
-        const req = indexedDB.open('quiz_app', 1);
+        const req = indexedDB.open('quiz_app', 2);
         req.onupgradeneeded = (e) => {
             const db = e.target.result;
             if (!db.objectStoreNames.contains('sets')) db.createObjectStore('sets', {keyPath:'id'});

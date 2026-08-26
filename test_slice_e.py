@@ -7,7 +7,7 @@ import io
 
 INJECT = """
 () => new Promise((resolve, reject) => {
-    const req = indexedDB.open('quiz_app', 1);
+    const req = indexedDB.open('quiz_app', 2);
     req.onupgradeneeded = (e) => {
         const db = e.target.result;
         if (!db.objectStoreNames.contains('sets')) db.createObjectStore('sets', {keyPath:'id'});
@@ -56,7 +56,7 @@ with sync_playwright() as p:
 
     # ========== 2. 导入（模拟换设备：清空后导入） ==========
     page.evaluate("""() => new Promise((res) => {
-        const req = indexedDB.open('quiz_app', 1);
+        const req = indexedDB.open('quiz_app', 2);
         req.onsuccess = () => {
             const db = req.result;
             const tx = db.transaction(['sets','records','settings'], 'readwrite');

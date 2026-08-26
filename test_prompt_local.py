@@ -15,7 +15,7 @@ with sync_playwright() as p:
     time.sleep(1)
     # 清掉之前测试污染的 prompt 设置
     page.evaluate("""async () => {
-        const req = indexedDB.open('quiz_app', 1);
+        const req = indexedDB.open('quiz_app', 2);
         req.onsuccess = () => {
             const db = req.result;
             const tx = db.transaction('settings', 'readwrite');

@@ -5,7 +5,7 @@ import time
 
 INJECT = """
 () => new Promise((resolve, reject) => {
-    const req = indexedDB.open('quiz_app', 1);
+    const req = indexedDB.open('quiz_app', 2);
     req.onupgradeneeded = (e) => {
         const db = e.target.result;
         if (!db.objectStoreNames.contains('sets')) db.createObjectStore('sets', {keyPath:'id'});
