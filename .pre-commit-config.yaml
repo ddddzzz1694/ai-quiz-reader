@@ -1,0 +1,19 @@
+# pre-commit 本地钩子：提交前自动检查（与 CI 一致，提前拦截）
+# 用法：python -m pre_commit install   （装一次，以后 git commit 自动跑）
+# 跳过本次：git commit --no-verify
+repos:
+  - repo: local
+    hooks:
+      - id: js-syntax
+        name: JS 语法检查
+        entry: node --check
+        language: system
+        files: '\.(js|mjs)$'
+        types: [file]
+
+      - id: no-root-paths
+        name: 无根路径残留（GitHub Pages 子目录必须相对路径）
+        entry: bash -c 'grep -rn "href=\"/\|src=\"/" static/index.html static/js/app.js static/sw.js static/manifest.webmanifest | grep -v data:image && exit 1 || exit 0'
+        language: system
+        files: '^static/'
+        pass_filenames: false

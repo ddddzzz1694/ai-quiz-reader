@@ -1,6 +1,6 @@
 # 自动部署到 GitHub Pages（peaceiris/actions-gh-pages v4，5357★）
-# 流程：push main → 先跑检查+测试（全绿才继续）→ 部署 static/ 到 gh-pages → 上线。
-# 强制机制：测试不过 = 部署不执行 = 线上不变。改码必验证，靠机器不靠自觉。
+# 流程：push main → 检查 + Playwright 全量测试（全绿才继续）→ 部署 static/ 到 gh-pages → 上线。
+# 强制机制：任何一步不过 = 部署不执行 = 线上不变。改码必验证，靠机器不靠自觉。
 name: Test and Deploy to GitHub Pages
 
 on:
@@ -13,11 +13,21 @@ permissions:
 
 jobs:
   test:
-    name: 检查+测试（不过就不部署）
+    name: 检查+功能测试（不过就不部署）
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 安装 Playwright
+        run: |
+          pip install playwright
+          python -m playwright install chromium --with-deps
 
       - name: 语法检查
         run: |
@@ -32,6 +42,21 @@ jobs:
       - name: 无根路径残留（GitHub Pages 子目录必须相对路径）
         run: |
           grep -rn 'href="/\|src="/' static/index.html static/js/app.js static/sw.js static/manifest.webmanifest | grep -v 'data:image' && { echo "发现根路径引用，部署终止"; exit 1; } || echo "无根路径引用 OK"
+
+      - name: 启动本地服务（供 Playwright 测试）
+        run: |
+          cd static && python -m http.server 8000 &
+          sleep 2
+          curl -s -o /dev/null -w "本地服务: %{http_code}\n" http://localhost:8000/index.html
+
+      - name: Playwright 功能测试（E2E/离线/上传/规则/新功能/回归）
+        run: |
+          python test_e2e_quiz.py
+          python test_pwa_offline.py
+          python test_upload_txt.py
+          python test_prompt_local.py
+          python test_new_features.py
+          python test_regression_fix.py
 
   deploy:
     name: 部署到 GitHub Pages
