@@ -755,12 +755,13 @@ async function renderDataPage(book) {
     scopeTitle = `📖 ${book.title} · `;
   }
 
-  // 每套题的最新作答统计（每题取最新一条记录）
+  // 每套题的最新作答统计（每题取最新一条记录，按时间排序保证最新在后）
   let totalAnswered = 0, totalCorrect = 0, totalWrong = 0;
   const perSet = {};   // setId -> {correct, wrong, answered}
   for (const s of sets) {
     const latest = new Map();
-    for (const r of records) if (r.setId === s.id) latest.set(r.qIndex, r);
+    const mine = records.filter((r) => r.setId === s.id).sort((a, b) => a.ts - b.ts);
+    for (const r of mine) latest.set(r.qIndex, r);
     let c = 0, w = 0;
     for (const r of latest.values()) { if (r.correct) c++; else w++; }
     perSet[s.id] = { correct: c, wrong: w, answered: c + w };
@@ -1159,6 +1160,83 @@ async function createBook() {
   if (b) $("#book-select").value = b.id;
 }
 
+/* ---------------- 错题本独立页（B2） ---------------- */
+async function renderWrongBook() {
+  const sets = await dbAll("sets");
+  const records = await dbAll("records");
+  const books = await dbAll("books");
+  // 每题最新一条
+  const latestBySet = {};
+  for (const s of sets) {
+    const map = new Map();
+    // 显式按时间排序（IndexedDB getAll 不保证顺序），取最新一条
+    const mine = records.filter((r) => r.setId === s.id).sort((a, b) => a.ts - b.ts);
+    for (const r of mine) map.set(r.qIndex, r);
+    latestBySet[s.id] = map;
+  }
+  // 汇总当前错题（每题最新一条是答错的）
+  const wrongItems = [];
+  for (const s of sets) {
+    const map = latestBySet[s.id];
+    if (!map) continue;
+    for (const r of map.values()) {
+      if (!r.correct) {
+        const q = s.questions[r.qIndex];
+        if (q) wrongItems.push({ set: s, qIndex: r.qIndex, q, record: r });
+      }
+    }
+  }
+  // 按书分组（bookId → 题）
+  const groups = {};
+  for (const item of wrongItems) {
+    const bid = item.set.bookId || "";
+    if (!groups[bid]) groups[bid] = [];
+    groups[bid].push(item);
+  }
+  const bookTitle = (bid) => (bid ? (books.find((b) => b.id === bid)?.title || "未知书") : "未分类");
+  const list = $("#wrong-list");
+  list.innerHTML = wrongItems.length
+    ? Object.keys(groups).map((bid) => `
+      <div class="wrong-group">
+        <div class="wrong-group-title">📖 ${esc(bookTitle(bid))} · ${groups[bid].length} 题错</div>
+        ${groups[bid].map((it) => `
+          <div class="wrong-item">
+            <div class="wrong-q">${esc(it.q.question)}</div>
+            <div class="wrong-actions">
+              <button class="btn-mini" data-wrong-practice="${it.set.id}" data-wrong-q="${it.qIndex}">重练</button>
+            </div>
+          </div>`).join("")}
+      </div>`).join("")
+    : `<p class="hint">🎉 没有错题，全掌握了！</p>`;
+  list.style.display = "block";
+  // 隐藏题集列表和统计
+  $("#set-list").style.display = "none";
+  $("#data-stats").style.display = "none";
+  $("#data-title").textContent = "❌ 错题本";
+  // 重练按钮
+  list.querySelectorAll("[data-wrong-practice]").forEach((btn) => {
+    btn.onclick = async () => {
+      const setId = btn.dataset.wrongPractice;
+      const qIdx = parseInt(btn.dataset.wrongQ, 10);
+      const set = sets.find((s) => s.id === setId);
+      if (!set) return;
+      await loadSetCache(setId);
+      // 构造只含该题的临时题集
+      const single = { ...set, questions: [set.questions[qIdx]] };
+      showView("quiz");
+      startQuiz(single, "sequence");
+    };
+  });
+}
+
+async function exitWrongBook() {
+  $("#wrong-list").style.display = "none";
+  $("#set-list").style.display = "";
+  $("#data-stats").style.display = "";
+  $("#data-title").textContent = "💾 我的数据";
+  renderDataPage();
+}
+
 /* ---------------- 语音输入（手机说话变文字） ----------------
  * 用浏览器自带 Web Speech API（手机 Chrome 支持中文），把说话转成文字填入输入框。
  * 需要 https（GitHub Pages 已满足）；不支持的环境按钮隐藏。
@@ -1242,6 +1320,7 @@ async function init() {
   $("#btn-back-home").onclick = () => { showView("home"); renderLastSet(); renderBooks(); };
   $("#btn-add-book").onclick = createBook;
   $("#btn-data-all").onclick = () => { renderDataPage(); };
+  $("#btn-wrong-book").onclick = renderWrongBook;
   $("#btn-settings").onclick = () => { showView("settings"); renderSettings(); };
   $("#btn-data").onclick = () => { showView("data"); renderDataPage(); };
   $("#btn-prompt").onclick = () => { showView("prompt"); renderPromptPage(); };
