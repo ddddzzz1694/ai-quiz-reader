@@ -1,7 +1,7 @@
-# 自动部署到 GitHub Pages（拿来主义：peaceiris/actions-gh-pages v4，5357★）
-# 作用：每次 push 到 main 分支，自动把 static/ 发布到 gh-pages 分支并上线。
-# 以后本地改完代码 → git push → 自动部署，不用再手动推 gh-pages。
-name: Deploy to GitHub Pages
+# 自动部署到 GitHub Pages（peaceiris/actions-gh-pages v4，5357★）
+# 流程：push main → 先跑检查+测试（全绿才继续）→ 部署 static/ 到 gh-pages → 上线。
+# 强制机制：测试不过 = 部署不执行 = 线上不变。改码必验证，靠机器不靠自觉。
+name: Test and Deploy to GitHub Pages
 
 on:
   push:
@@ -12,7 +12,30 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    name: 检查+测试（不过就不部署）
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 语法检查
+        run: |
+          node --check static/js/app.js
+          node --check static/sw.js
+          echo "JS 语法 OK"
+
+      - name: manifest JSON 合法
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('static/manifest.webmanifest','utf8')); console.log('manifest OK')"
+
+      - name: 无根路径残留（GitHub Pages 子目录必须相对路径）
+        run: |
+          grep -rn 'href="/\|src="/' static/index.html static/js/app.js static/sw.js static/manifest.webmanifest | grep -v 'data:image' && { echo "发现根路径引用，部署终止"; exit 1; } || echo "无根路径引用 OK"
+
   deploy:
+    name: 部署到 GitHub Pages
+    needs: test          # 测试 job 全绿才执行
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
