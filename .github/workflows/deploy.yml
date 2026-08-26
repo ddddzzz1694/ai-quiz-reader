@@ -1,0 +1,26 @@
+# 自动部署到 GitHub Pages（拿来主义：peaceiris/actions-gh-pages v4，5357★）
+# 作用：每次 push 到 main 分支，自动把 static/ 发布到 gh-pages 分支并上线。
+# 以后本地改完代码 → git push → 自动部署，不用再手动推 gh-pages。
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy static to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./static
+          force_orphan: true

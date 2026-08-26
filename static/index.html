@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#2196F3">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>AI出题读书法</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="css/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
+</head>
+<body>
+
+<!-- ============ 顶部状态栏 ============ -->
+<header id="topbar">
+  <div class="topbar-inner">
+    <span class="logo">📚 AI出题读书法</span>
+    <span id="net-status" class="net-badge online">● 在线</span>
+  </div>
+</header>
+
+<!-- ============ 主容器 ============ -->
+<main id="app">
+
+  <!-- ① 首页：输入书摘 -->
+  <section id="view-home" class="view active">
+    <div class="card hero-card">
+      <h2>把书摘变成题目</h2>
+      <p class="hint">粘贴一段书摘或文章，AI 帮你出选择题，每天刷题加深记忆。</p>
+      <textarea id="input-text" rows="10" placeholder="在这里粘贴书摘/文章内容，或点下方上传 txt 文件……&#10;&#10;比如：非暴力沟通四步法：观察、感受、需要、请求……"></textarea>
+      <div class="upload-row">
+        <button id="btn-upload-txt" class="btn-secondary btn-upload">📂 上传 txt 文件</button>
+        <input type="file" id="upload-file" accept=".txt,text/plain" style="display:none">
+        <span id="upload-name" class="hint"></span>
+      </div>
+      <button id="btn-generate" class="btn-primary btn-big">✨ 生成题目</button>
+      <div class="mini-row">
+        <button id="btn-settings" class="btn-mini">⚙️ 设置</button>
+        <button id="btn-data" class="btn-mini">💾 数据</button>
+        <button id="btn-prompt" class="btn-mini">📝 出题规则</button>
+      </div>
+    </div>
+
+    <div id="gen-status" class="status-area"></div>
+
+    <div id="last-set" class="card" style="display:none">
+      <h3>📖 最近一套题</h3>
+      <div id="last-set-info"></div>
+      <button id="btn-continue" class="btn-secondary">继续刷这套</button>
+      <button id="btn-review" class="btn-secondary">只刷错题</button>
+    </div>
+  </section>
+
+  <!-- ② 刷题页 -->
+  <section id="view-quiz" class="view">
+    <div class="quiz-header">
+      <span id="quiz-progress">第 1/10 题</span>
+      <span id="quiz-score">对 0 · 错 0</span>
+    </div>
+    <div class="card quiz-card">
+      <p id="quiz-question" class="quiz-question"></p>
+      <div id="quiz-options" class="quiz-options"></div>
+      <div id="quiz-supplement" class="supplement-box">
+        <textarea id="supplement-text" rows="2" placeholder="（选填）写下你为什么选这个，或说说你的理解……"></textarea>
+      </div>
+      <div id="quiz-feedback" class="quiz-feedback" style="display:none">
+        <div id="feedback-verdict" class="verdict"></div>
+        <div id="feedback-explanation" class="explanation"></div>
+        <div id="feedback-ai" style="display:none"></div>
+      </div>
+      <button id="btn-submit" class="btn-primary btn-big">提交答案</button>
+      <button id="btn-next" class="btn-secondary" style="display:none">下一题 →</button>
+    </div>
+    <div id="quiz-done" class="card done-card" style="display:none">
+      <h2>🎉 这套刷完了！</h2>
+      <p id="done-stats"></p>
+      <button id="btn-restart" class="btn-primary">再刷一遍</button>
+      <button id="btn-back-home" class="btn-secondary">回到首页</button>
+    </div>
+  </section>
+
+  <!-- ③ 设置页 -->
+  <section id="view-settings" class="view">
+    <div class="card">
+      <h2>⚙️ 设置</h2>
+      <label class="field-label">DeepSeek API Key</label>
+      <input id="set-apikey" type="password" placeholder="sk-xxxxxxxx" autocomplete="off">
+      <p class="hint">Key 只存在你自己的浏览器里，不会上传到任何地方。<a href="#" id="link-getkey" target="_blank">没有 Key？去 DeepSeek 开放平台申请</a></p>
+      <button id="btn-save-key" class="btn-primary">保存 Key</button>
+      <div id="key-status" class="status-area"></div>
+
+      <hr>
+      <label class="field-label">每次出题数量</label>
+      <div class="stepper">
+        <button id="btn-count-minus" class="stepper-btn">−</button>
+        <span id="count-value" class="stepper-val">10</span>
+        <button id="btn-count-plus" class="stepper-btn">＋</button>
+      </div>
+
+      <hr>
+      <label class="field-label">难度</label>
+      <div class="seg" id="seg-difficulty">
+        <button data-difficulty="auto" class="seg-btn active">AI 推荐</button>
+        <button data-difficulty="easy" class="seg-btn">偏简单</button>
+        <button data-difficulty="mixed" class="seg-btn">混合适中</button>
+        <button data-difficulty="hard" class="seg-btn">偏难</button>
+      </div>
+
+      <hr>
+      <label class="field-label">题型</label>
+      <div class="seg" id="seg-types">
+        <button data-types="choice" class="seg-btn active">纯选择</button>
+        <button data-types="choice-judge" class="seg-btn">选择+判断</button>
+      </div>
+
+      <hr>
+      <label class="field-label">刷题顺序</label>
+      <div class="seg" id="seg-order">
+        <button data-order="sequence" class="seg-btn active">顺序</button>
+        <button data-order="random" class="seg-btn">随机</button>
+        <button data-order="wrong-first" class="seg-btn">先错题</button>
+      </div>
+
+      <hr>
+      <button id="btn-export" class="btn-secondary">⬇️ 导出数据（备份）</button>
+      <button id="btn-import" class="btn-secondary">⬆️ 导入数据（恢复）</button>
+      <input type="file" id="import-file" accept=".json" style="display:none">
+      <p class="hint">导出的文件存在手机/电脑本地。换设备时：先导出，再到新设备导入，数据就同步了。</p>
+    </div>
+  </section>
+
+  <!-- ④ 数据页 -->
+  <section id="view-data" class="view">
+    <div class="card">
+      <h2>💾 我的数据</h2>
+      <div id="data-stats" class="data-stats"></div>
+      <h3>📚 已生成的题集</h3>
+      <div id="set-list" class="set-list"></div>
+    </div>
+  </section>
+
+  <!-- ⑤ 出题规则页 -->
+  <section id="view-prompt" class="view">
+    <div class="card">
+      <h2>📝 出题规则</h2>
+      <p class="hint">这里控制 AI 怎么出题。改完点保存，旧版本会自动存档，随时可以回滚。</p>
+      <textarea id="prompt-text" rows="20" class="mono"></textarea>
+      <button id="btn-save-prompt" class="btn-primary">保存规则</button>
+      <div id="prompt-status" class="status-area"></div>
+      <h3>历史版本</h3>
+      <div id="prompt-history" class="prompt-history"></div>
+    </div>
+  </section>
+
+</main>
+
+<!-- 底部导航（手机友好） -->
+<nav id="tabbar">
+  <button class="tab active" data-view="home">🏠 首页</button>
+  <button class="tab" data-view="data">📚 数据</button>
+  <button class="tab" data-view="settings">⚙️ 设置</button>
+  <button class="tab" data-view="prompt">📝 规则</button>
+</nav>
+
+<script src="js/app.js"></script>
+</body>
+</html>

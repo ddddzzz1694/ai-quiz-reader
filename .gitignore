@@ -1,0 +1,8 @@
+# 排除临时/部署产物（只跟踪源码）
+__pycache__/
+*.pyc
+.deploy_tmp/
+gh_auth_log.txt
+server_test.log
+*.bak
+*.bak_*
