@@ -37,6 +37,12 @@ function openDB() {
         const st = db.createObjectStore("records", { keyPath: "id" });
         st.createIndex("setId", "setId", { unique: false });
       }
+      if (!db.objectStoreNames.contains("chats")) {
+        db.createObjectStore("chats", { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains("transfers")) {
+        db.createObjectStore("transfers", { keyPath: "id" });
+      }
     };
     req.onsuccess = () => { _db = req.result; resolve(_db); };
     req.onerror = () => reject(req.error);
@@ -69,7 +75,7 @@ async function dbClear(store) {
 }
 
 /* ---------------- 设置读写 ---------------- */
-const DEFAULT_SETTINGS = { apiKey: "", count: 10, order: "sequence", difficulty: "auto", types: "choice" };
+const DEFAULT_SETTINGS = { apiKey: "", count: 10, order: "sequence", difficulty: "auto", types: "choice", feedbackMode: "now" };
 
 async function loadSettings() {
   const s = { ...DEFAULT_SETTINGS };
@@ -120,6 +126,7 @@ const state = {
   answered: false,
   supplement: "",
   wrongIndexes: new Set(), // 本套错题索引
+  pendingFeedback: [],     // 统一点评模式：收集待点评的题目
 };
 
 /* ---------------- 首页：上传 txt 文件 ---------------- */
@@ -167,23 +174,26 @@ async function onGenerate() {
     setStatus("gen-status", "还没有设置 API Key —— 点下方 ⚙️ 设置，填入你的 DeepSeek Key", "error");
     return;
   }
+  const goal = $("#input-goal").value.trim();  // 本次学习目的（可空）
   $("#btn-generate").disabled = true;
-  setStatus("gen-status", `<span class="loading-spinner"></span>AI 正在出题，大约需要 10-30 秒……`, "loading");
+  setStatus("gen-status", `<span class="loading-spinner"></span>AI 正在判断该出多少题并出题，大约 10-40 秒……`, "loading");
   try {
     const prompt = await loadPrompt();
-    const questions = await callAI(settings.apiKey, prompt, text, settings.count, settings.difficulty, settings.types);
+    const questions = await callAI(settings.apiKey, prompt, text, settings.count, settings.difficulty, settings.types, goal);
     if (!questions || !questions.length) throw new Error("AI 返回了空结果");
     const setObj = {
       id: uid(),
       title: makeTitle(text),
       source: text,
+      goal,
       questions,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
     await dbPut("sets", setObj);
     $("#input-text").value = "";
-    setStatus("gen-status", `<span class="ok">✅ 出好了 ${questions.length} 道题，开始刷吧！</span>`, "ok");
+    $("#input-goal").value = "";
+    setStatus("gen-status", `<span class="ok">✅ AI 判断这套出 ${questions.length} 道题（覆盖文本核心${goal ? "，围绕你的目的" : ""}），开始刷吧！</span>`, "ok");
     renderLastSet();
     showView("quiz");
     startQuiz(setObj, "sequence");
@@ -200,7 +210,7 @@ function makeTitle(text) {
 }
 
 /* ---------------- 调用 DeepSeek API ---------------- */
-async function callAI(apiKey, prompt, text, count, difficulty, types) {
+async function callAI(apiKey, prompt, text, count, difficulty, types, goal) {
   const diffText = {
     auto: "难度由你根据文本内容判断，总体保持适中（先易后难）",
     easy: "整体偏简单：大部分题直接对应原文观点，少部分需简单推理",
@@ -210,13 +220,17 @@ async function callAI(apiKey, prompt, text, count, difficulty, types) {
   const typeText = types === "choice-judge"
     ? "题型：大部分为单选题（4选1），可以穿插少量判断题（对/错）"
     : "题型：全部为单选题（4个选项 A/B/C/D，只有一个正确答案）";
+  // 目的描述：老板想达成什么（决定出题数量与侧重）
+  const goalText = goal && goal.trim()
+    ? `\n【本次学习目的】用户想通过这套题达到：${goal.trim()}。请围绕这个目的决定出题数量和侧重，不必拘泥于固定题数。`
+    : "";
   const body = {
     model: "deepseek-chat",
     temperature: 0.7,
     max_tokens: 4000,
     messages: [
       { role: "system", content: prompt },
-      { role: "user", content: `请根据以下文本出 ${count} 道题。\n${diffText}\n${typeText}\n\n文本内容：\n${text.slice(0, 8000)}` },
+      { role: "user", content: `请根据以下文本出 ${count} 道题（这是一个初始建议数，你可以根据内容重要性微调，最终以你判断为准）。\n${diffText}\n${typeText}${goalText}\n\n文本内容：\n${text.slice(0, 8000)}` },
     ],
   };
   const resp = await fetch("https://api.deepseek.com/chat/completions", {
@@ -253,6 +267,30 @@ async function callAIFeedback(q, myAnswer, correct, supplement) {
     messages: [
       { role: "system", content: "你是一位耐心的学习陪练，针对用户的选择和思考给针对性反馈，帮他把书里的方法真正用起来。语气鼓励、具体、不啰嗦。" },
       { role: "user", content: userMsg },
+    ],
+  };
+  const resp = await fetch("https://api.deepseek.com/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${settings.apiKey}` },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) throw new Error(`API ${resp.status}`);
+  const data = await resp.json();
+  return (data?.choices?.[0]?.message?.content || "").trim();
+}
+
+/* 追问 AI：基于当前题目继续对话（记录存 IndexedDB chats 表） */
+async function askAI(question, q, myAnswer, correct, supplement) {
+  const settings = state.settings;
+  if (!settings || !settings.apiKey) throw new Error("no key");
+  const opts = (q.options || []).map((o, i) => `${String.fromCharCode(65 + i)}. ${o}`).join("\n");
+  const body = {
+    model: "deepseek-chat",
+    temperature: 0.6,
+    max_tokens: 800,
+    messages: [
+      { role: "system", content: "你是这套题的学习陪练。用户在追问这道题，结合题目和解析用大白话回答，帮他真正搞懂。简洁、具体。" },
+      { role: "user", content: `题目：${q.question}\n选项：\n${opts}\n正确答案：${q.answer}\n解析：${q.explanation || ""}\n我的选择：${myAnswer}（${correct ? "对" : "错"}）${supplement ? "\n我的想法：" + supplement : ""}\n\n我的追问：${question}` },
     ],
   };
   const resp = await fetch("https://api.deepseek.com/chat/completions", {
@@ -307,6 +345,7 @@ function startQuiz(setObj, orderType) {
   state.answered = false;
   state.supplement = "";
   state.wrongIndexes = new Set();
+  state.pendingFeedback = [];
 
   // 按顺序规则构造刷题序列
   const idxs = [];
@@ -357,6 +396,10 @@ function renderQuiz() {
   $("#quiz-feedback").style.display = "none";
   $("#feedback-ai").style.display = "none";
   $("#feedback-ai").innerHTML = "";
+  const askBtn = $("#btn-ask-ai");
+  if (askBtn) { askBtn.style.display = "none"; }
+  const askBox = $("#ask-ai-box");
+  if (askBox) { askBox.style.display = "none"; }
   $("#supplement-text").value = "";
   state.selected = null;
   state.answered = false;
@@ -416,6 +459,9 @@ async function onSubmit() {
   verdict.className = "verdict " + (correct ? "correct" : "wrong");
   $("#feedback-explanation").textContent = q.explanation || "（这题没有解析）";
   feedback.style.display = "block";
+  // 追问 AI 按钮：任何时候都可点（对解析/点评不满意就问）
+  const askBtn = $("#btn-ask-ai");
+  if (askBtn) { askBtn.style.display = "block"; askBtn.dataset.qIndex = item.qIndex; }
 
   // 选项着色
   $$(".option-btn").forEach((b) => {
@@ -446,9 +492,12 @@ async function onSubmit() {
   $("#btn-submit").style.display = "none";
   $("#btn-next").style.display = "block";
 
-  // AI 点评：写了感想 或 答错时，针对"我的选择+我的想法"给针对性反馈
-  if (supplement || !correct) {
-    // 占位提示（loading 态），失败时显示离线提示
+  // AI 点评：答错必评（无论有没有感想）；写了感想也评。按设置的时机（当时/统一）
+  const shouldFeedback = (!correct || supplement);
+  if (shouldFeedback && state.settings.feedbackMode === "after") {
+    // 统一点评模式：先收集，刷完在完成页统一评
+    state.pendingFeedback.push({ q, myAnswer: state.selected, correct, supplement });
+  } else if (shouldFeedback && state.settings.feedbackMode !== "after") {    // 每题当时点评
     const box = $("#feedback-ai");
     if (box) {
       box.innerHTML = `<div class="ai-feedback"><div class="ai-fb-title">🤖 AI 点评</div><div class="ai-fb-body">生成中…</div></div>`;
@@ -488,17 +537,9 @@ async function onSubmit() {
 }
 
 async function saveRecord(rec) {
-  // 先删掉该题的历史记录，保证每题只有最新一条（避免同题多记录导致统计错乱）
-  try {
-    const all = await dbAll("records");
-    for (const r of all) {
-      if (r.setId === rec.setId && r.qIndex === rec.qIndex && r.id !== rec.id) {
-        await dbDelete("records", r.id);
-      }
-    }
-  } catch (e) { /* 删除失败不阻塞保存 */ }
+  // 作答历史全留存：每次作答都新增一条，不删除旧记录（老板要求：重刷不覆盖历史）
   await dbPut("records", rec);
-  // 更新内存缓存：记录按 题号→最新一条 维护
+  // 更新内存缓存：记录按 题号→最新一条 维护（统计用最新，历史在 IndexedDB 全留）
   const map = scoreCache.get(rec.setId) || new Map();
   map.set(rec.qIndex, rec);
   scoreCache.set(rec.setId, map);
@@ -514,6 +555,64 @@ async function onNext() {
   renderQuiz();
 }
 
+/* 追问 AI：展开/收起对话框 */
+function onAskToggle() {
+  const box = $("#ask-ai-box");
+  if (box.style.display === "none") {
+    box.style.display = "block";
+    $("#ask-ai-input").focus();
+    const qIdx = $("#btn-ask-ai").dataset.qIndex;
+    renderAskHistory(qIdx);
+  } else {
+    box.style.display = "none";
+  }
+}
+
+/* 显示这道题的追问历史 */
+async function renderAskHistory(qIndex) {
+  const box = $("#ask-ai-history");
+  if (!box) return;
+  const chats = await dbAll("chats");
+  const mine = chats
+    .filter((c) => c.setId === state.currentSet.id && String(c.qIndex) === String(qIndex))
+    .sort((a, b) => a.ts - b.ts);
+  box.innerHTML = mine.length
+    ? mine.map((c) => `<div class="ask-row"><div class="ask-q">🙋 ${esc(c.question)}</div><div class="ask-a">🤖 ${esc(c.answer)}</div></div>`).join("")
+    : "";
+}
+
+/* 发送追问 */
+async function onAskSend() {
+  const q = $("#ask-ai-input").value.trim();
+  if (!q) return;
+  const settings = state.settings;
+  if (!settings || !settings.apiKey) { alert("请先在 ⚙️ 设置 填 DeepSeek Key"); return; }
+  const qIdx = $("#btn-ask-ai").dataset.qIndex;
+  const item = state.quizOrder.find((it) => it.qIndex === parseInt(qIdx, 10));
+  if (!item) return;
+  // 找这条作答记录（最新一条）
+  const recs = await dbAll("records");
+  const mine = recs.filter((r) => r.setId === state.currentSet.id && r.qIndex === item.qIndex).sort((a, b) => b.ts - a.ts);
+  const latest = mine[0];
+  $("#ask-ai-input").value = "";
+  $("#ask-ai-history").innerHTML += `<div class="ask-row"><div class="ask-q">🙋 ${esc(q)}</div><div class="ask-a" style="color:#888">🤖 思考中…</div></div>`;
+  try {
+    const answer = await askAI(q, item.q, latest?.answer || "", latest?.correct || false, latest?.supplement || "");
+    await dbPut("chats", {
+      id: uid(),
+      setId: state.currentSet.id,
+      qIndex: item.qIndex,
+      question: q,
+      answer,
+      ts: Date.now(),
+    });
+    renderAskHistory(qIdx);
+  } catch (e) {
+    renderAskHistory(qIdx);
+    alert("追问失败：" + (e.message || "网络/Key 问题"));
+  }
+}
+
 function renderDone() {
   $("#quiz-progress").textContent = "完成！";
   const { correct, wrong, answered } = calcSetStats(state.currentSet.id, state.currentSet.questions.length);
@@ -522,6 +621,123 @@ function renderDone() {
   $("#btn-submit").style.display = "none";
   $("#btn-next").style.display = "none";
   $("#quiz-done").style.display = "block";
+  // 统一点评模式：刷完统一评（只评待点评的题）
+  if (state.settings.feedbackMode === "after" && state.pendingFeedback.length) {
+    runBatchFeedback();
+  }
+}
+
+/* 远迁移测试：检验"记忆→行动"——你能在现实中用出书里的方法吗 */
+function openTransferTest() {
+  const set = state.currentSet;
+  if (!set) return;
+  const overlay = document.createElement("div");
+  overlay.className = "detail-overlay";
+  overlay.innerHTML = `
+    <div class="detail-panel">
+      <div class="detail-title">🧠 远迁移测试 — ${esc(set.title)}</div>
+      <div class="detail-body">
+        <p class="hint">检验你是否真的掌握了：不看题目，想想这套书里的方法，在真实生活/工作中你会怎么用它？</p>
+        <div class="transfer-example">
+          <div class="transfer-ex-title">💡 示例（ABCD 引导）</div>
+          <p>假设你刚学了《非暴力沟通》，今天同事迟到没道歉，你很生气——你会怎么做？</p>
+          <p>A. 直接说他怎么又迟到<br>B. 说出观察+感受+需要+请求<br>C. 忍着不说<br>D. 跟别人吐槽</p>
+          <p class="hint">你不需要选 ABCD，直接用你自己的话回答：</p>
+        </div>
+        <textarea id="transfer-input" rows="5" placeholder="在这个场景（或你想到的其他场景）里，你会怎么用书里的方法？"></textarea>
+        <button id="btn-voice-transfer" class="btn-voice" type="button">🎤</button>
+        <button class="btn-primary btn-big" id="transfer-submit">提交，让 AI 判断我掌握没</button>
+        <div id="transfer-result" class="transfer-result" style="margin-top:10px"></div>
+      </div>
+      <button class="btn-primary" id="transfer-close">关闭</button>
+    </div>
+  `;
+  overlay.querySelector("#transfer-close").onclick = () => overlay.remove();
+  overlay.querySelector("#transfer-submit").onclick = async () => {
+    const ans = overlay.querySelector("#transfer-input").value.trim();
+    if (!ans) { overlay.querySelector("#transfer-result").innerHTML = `<span class="error">先写点你的想法～</span>`; return; }
+    const resBox = overlay.querySelector("#transfer-result");
+    resBox.innerHTML = `<span class="loading-spinner"></span> AI 正在判断你的掌握程度…`;
+    try {
+      const result = await runTransferCheck(set, ans);
+      resBox.innerHTML = `<div class="ai-feedback"><div class="ai-fb-title">🤖 AI 判断</div><div class="ai-fb-body">${esc(result)}</div></div>`;
+    } catch (e) {
+      resBox.innerHTML = `<span class="error">判断失败：${esc(e.message)}（检查 Key/网络）</span>`;
+    }
+  };
+  document.body.appendChild(overlay);
+}
+
+/* 调 AI 判断掌握度，结果存案例库（transfers 表） */
+async function runTransferCheck(set, userAnswer) {
+  const settings = state.settings;
+  if (!settings || !settings.apiKey) throw new Error("请先在 ⚙️ 设置 填 Key");
+  const coreIdeas = set.questions.slice(0, 8).map((q, i) => `${i + 1}. ${q.question} → ${q.explanation || ""}`).join("\n");
+  const body = {
+    model: "deepseek-chat",
+    temperature: 0.5,
+    max_tokens: 900,
+    messages: [
+      { role: "system", content: "你是掌握度诊断教练。用户学了一套书的方法，现在回答了一个现实应用场景。请判断：他是否真的理解并能应用（不是背书）？指出：①理解对不对 ②哪里偏了/漏了 ③具体怎么修正。语气鼓励、具体。250字内。" },
+      { role: "user", content: `这本书/这套题的核心方法：\n${coreIdeas}\n\n用户说：${userAnswer}` },
+    ],
+  };
+  const resp = await fetch("https://api.deepseek.com/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${settings.apiKey}` },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) throw new Error(`API ${resp.status}`);
+  const data = await resp.json();
+  const result = (data?.choices?.[0]?.message?.content || "").trim();
+  // 案例库：你的应用场景 + AI 判断，自动归档（老板最初意见）
+  await dbPut("transfers", {
+    id: uid(),
+    setId: set.id,
+    setTitle: set.title,
+    userAnswer,
+    aiResult: result,
+    ts: Date.now(),
+  });
+  return result;
+}
+
+/* 统一点评：刷完把待点评的题一起发给 AI 点评，结果追加到完成页 */
+async function runBatchFeedback() {
+  const settings = state.settings;
+  if (!settings || !settings.apiKey) return;
+  const items = state.pendingFeedback;
+  state.pendingFeedback = [];
+  const listText = items.map((it, i) => {
+    const opts = (it.q.options || []).map((o, j) => `${String.fromCharCode(65 + j)}. ${o}`).join("\n");
+    return `【${i + 1}】题目：${it.q.question}\n选项：\n${opts}\n正确答案：${it.q.answer}\n我的选择：${it.myAnswer}（${it.correct ? "答对" : "答错"}）\n我的想法：${it.supplement || "（未填写）"}`;
+  }).join("\n\n");
+  const body = {
+    model: "deepseek-chat",
+    temperature: 0.6,
+    max_tokens: 1500,
+    messages: [
+      { role: "system", content: "你是一位耐心的学习陪练。用户刚刷完一套题，请针对下面每道做错的题（或写了想法的题）给简短点评：理解对不对、哪里偏了、怎么修正。每题 2-3 句，编号对应。" },
+      { role: "user", content: listText },
+    ],
+  };
+  try {
+    const resp = await fetch("https://api.deepseek.com/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${settings.apiKey}` },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const comment = (data?.choices?.[0]?.message?.content || "").trim();
+    if (!comment) return;
+    const box = document.createElement("div");
+    box.className = "ai-feedback";
+    box.style.marginTop = "12px";
+    box.innerHTML = `<div class="ai-fb-title">🤖 AI 统一点评</div><div class="ai-fb-body">${esc(comment)}</div>`;
+    const doneCard = $("#quiz-done");
+    if (doneCard) doneCard.appendChild(box);
+  } catch (e) { /* 失败静默 */ }
 }
 
 /* ---------------- 数据页 ---------------- */
@@ -562,10 +778,18 @@ async function renderDataPage() {
       <div class="set-actions">
         <button class="btn-secondary" data-act="practice" data-id="${s.id}">▶️ 刷题</button>
         <button class="btn-secondary" data-act="wrong" data-id="${s.id}">错题</button>
-        <button class="btn-secondary" data-act="detail" data-id="${s.id}">📋 答题明细</button>
+        <button class="btn-secondary" data-act="addq" data-id="${s.id}">➕ 加题</button>
+        <button class="btn-secondary" data-act="sort" data-id="${s.id}">↕️ 排序</button>
+        <button class="btn-secondary" data-act="detail" data-id="${s.id}">📋 明细</button>
         <button class="btn-secondary" data-act="delete" data-id="${s.id}">🗑 删除</button>
       </div>
     `;
+    item.querySelector('[data-act="addq"]').onclick = async () => {
+      await addQuestionsToSet(s);
+    };
+    item.querySelector('[data-act="sort"]').onclick = async () => {
+      await sortQuestions(s);
+    };
     item.querySelector('[data-act="detail"]').onclick = async () => {
       await showSetDetail(s, records.filter((r) => r.setId === s.id));
     };
@@ -592,26 +816,112 @@ async function renderDataPage() {
   });
 }
 
+/* 调整顺序：简单前置 / 错题优先，原题不删 */
+async function sortQuestions(set) {
+  const mode = prompt("排序方式：\n1. 简单前置（简单→中等→困难）\n2. 错题优先（没掌握的先刷）", "1");
+  const order = [
+    { q: "简单", d: 1 },
+    { q: "中等", d: 2 },
+    { q: "困难", d: 3 },
+    { q: "难", d: 3 },
+  ];
+  const diffRank = (s) => {
+    const t = String(s || "").trim();
+    for (const o of order) if (t.includes(o.q)) return o.d;
+    return 2;
+  };
+  let sorted;
+  if (String(mode).trim() === "2") {
+    // 错题优先：先未掌握的（答错/未答），再已掌握的；每题顺序稳定
+    const recs = await dbAll("records");
+    const mine = recs.filter((r) => r.setId === set.id);
+    const latest = new Map();
+    for (const r of mine) latest.set(r.qIndex, r);
+    const idxs = set.questions.map((_, i) => i);
+    const wrongFirst = idxs.filter((i) => !latest.get(i) || !latest.get(i).correct);
+    const rest = idxs.filter((i) => latest.get(i) && latest.get(i).correct);
+    sorted = [...wrongFirst, ...rest].map((i) => set.questions[i]);
+  } else {
+    // 简单前置（默认）：难度升序，同难度保持原顺序
+    sorted = [...set.questions].sort((a, b) => (diffRank(a.difficulty) - diffRank(b.difficulty)));
+  }
+  set.questions = sorted;
+  set.updatedAt = Date.now();
+  await dbPut("sets", set);
+  alert(`✅ 已按${mode === "2" ? "错题优先" : "简单前置"}重新排序（原题都没删）`);
+  renderDataPage();
+}
+
+/* 增加题目：AI 基于原文+已有题补出新题，追加到原题后（只增不替换） */
+async function addQuestionsToSet(set) {
+  const settings = state.settings;
+  if (!settings || !settings.apiKey) {
+    alert("请先在 ⚙️ 设置 里填 DeepSeek Key");
+    return;
+  }
+  const addCount = prompt("想增加几道题？（默认 5 道）", "5");
+  const n = Math.max(1, Math.min(20, parseInt(addCount, 10) || 5));
+  const existing = set.questions.map((q, i) => `${i + 1}. ${q.question}`).join("\n");
+  const prompt = await loadPrompt();
+  const userMsg = `以下是已经出过的 ${set.questions.length} 道题：\n${existing}\n\n请再出 ${n} 道【新题】——围绕原文核心但避免与上面重复，覆盖未涉及的角度。\n\n原文：\n${(set.source || "").slice(0, 8000)}`;
+  const body = {
+    model: "deepseek-chat",
+    temperature: 0.7,
+    max_tokens: 4000,
+    messages: [
+      { role: "system", content: prompt },
+      { role: "user", content: userMsg },
+    ],
+  };
+  const resp = await fetch("https://api.deepseek.com/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${settings.apiKey}` },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) throw new Error(`API ${resp.status}`);
+  const data = await resp.json();
+  const content = data?.choices?.[0]?.message?.content || "";
+  const newQs = parseQuestions(content);
+  if (!newQs || !newQs.length) { alert("AI 没出出新题，请重试或换说法"); return; }
+  // 追加到原题后（只增不替换）
+  set.questions = set.questions.concat(newQs);
+  set.updatedAt = Date.now();
+  await dbPut("sets", set);
+  scoreCache.delete(set.id);
+  wrongCache.delete(set.id);
+  await loadSetCache(set.id);
+  alert(`✅ 增加了 ${newQs.length} 道题，现在共 ${set.questions.length} 道（原题保留）`);
+  renderDataPage();
+}
+
 /* 答题明细：展示这套题每道题的作答记录（对错/选择/感想/时间/AI点评） */
 async function showSetDetail(set, recs) {
   const overlay = document.createElement("div");
   overlay.className = "detail-overlay";
-  // 每题取最新一条记录
-  const latest = new Map();
-  for (const r of recs) latest.set(r.qIndex, r);
+  // 每题的全部作答历史（按时间倒序，最新在前）——老板要求：重刷不覆盖历史
+  const byQ = {};
+  for (const r of recs) {
+    if (!byQ[r.qIndex]) byQ[r.qIndex] = [];
+    byQ[r.qIndex].push(r);
+  }
+  for (const k in byQ) byQ[k].sort((a, b) => b.ts - a.ts);
   const rows = set.questions.map((q, i) => {
-    const r = latest.get(i);
-    const time = r ? new Date(r.ts).toLocaleString("zh-CN") : "";
-    const verdict = r ? (r.correct ? '<span class="dv-ok">✅ 对</span>' : '<span class="dv-no">❌ 错</span>') : '<span class="dv-na">未答</span>';
-    const optText = (r && q.options && r.answer) ? (q.options[r.answer.charCodeAt(0) - 65] || "") : "";
-    const myAns = r ? `<span class="dv-ans">我的选择：${r.answer}${optText ? " · " + esc(optText) : ""}</span>` : "";
-    const sup = r && r.supplement ? `<div class="dv-sup">💬 ${esc(r.supplement)}</div>` : "";
-    const ai = r && r.aiComment ? `<div class="dv-ai">🤖 ${esc(r.aiComment)}</div>` : "";
+    const hist = byQ[i] || [];
+    const times = hist.map((r) => new Date(r.ts).toLocaleString("zh-CN"));
+    const verdicts = hist.map((r) => (r.correct ? '<span class="dv-ok">✅ 对</span>' : '<span class="dv-no">❌ 错</span>'));
+    const attempts = hist.length
+      ? hist.map((r, j) => {
+          const optText = (q.options && r.answer) ? (q.options[r.answer.charCodeAt(0) - 65] || "") : "";
+          const sup = r.supplement ? `<div class="dv-sup">💬 ${esc(r.supplement)}</div>` : "";
+          const ai = r.aiComment ? `<div class="dv-ai">🤖 ${esc(r.aiComment)}</div>` : "";
+          return `<div class="dv-attempt"><div class="dv-head">${verdicts[j]} <span class="dv-ans">我的选择：${esc(r.answer)}${optText ? " · " + esc(optText) : ""}</span> <span class="dv-time">${times[j]}</span></div>${sup}${ai}</div>`;
+        }).join("")
+      : '<span class="dv-na">未答</span>';
+    const badge = hist.length > 1 ? `<span class="dv-count">共刷 ${hist.length} 次</span>` : "";
     return `<div class="dv-item">
-      <div class="dv-head">${verdict} <span class="dv-q">${i + 1}. ${esc(q.question)}</span> ${myAns} <span class="dv-time">${time}</span></div>
-      ${sup}
-      ${ai}
-      ${r ? `<div class="dv-exp"><span class="dv-correct">正确答案：${esc(q.answer)}</span> — ${esc(q.explanation || "")}</div>` : ""}
+      <div class="dv-head">${badge} <span class="dv-q">${i + 1}. ${esc(q.question)}</span></div>
+      ${attempts}
+      <div class="dv-exp"><span class="dv-correct">正确答案：${esc(q.answer)}</span> — ${esc(q.explanation || "")}</div>
     </div>`;
   }).join("");
   overlay.innerHTML = `
@@ -686,6 +996,7 @@ async function renderSettings() {
   $$("#seg-order .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.order === state.settings.order));
   $$("#seg-difficulty .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.difficulty === state.settings.difficulty));
   $$("#seg-types .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.types === state.settings.types));
+  $$("#seg-feedback .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.feedback === state.settings.feedbackMode));
 }
 
 /* ---------------- 出题规则页（纯本地存储） ----------------
@@ -787,6 +1098,37 @@ async function renderLastSet() {
   };
 }
 
+/* ---------------- 语音输入（手机说话变文字） ----------------
+ * 用浏览器自带 Web Speech API（手机 Chrome 支持中文），把说话转成文字填入输入框。
+ * 需要 https（GitHub Pages 已满足）；不支持的环境按钮隐藏。
+ */
+function setupVoiceInput(btnId, inputId) {
+  const btn = document.getElementById(btnId);
+  const input = document.getElementById(inputId);
+  if (!btn || !input) return;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { btn.style.display = "none"; return; }
+  let recognizing = false;
+  btn.onclick = () => {
+    if (recognizing) { recognizing = false; rec.stop(); btn.textContent = "🎤"; return; }
+    const rec = new SR();
+    rec.lang = "zh-CN";
+    rec.interimResults = true;
+    rec.continuous = false;
+    rec.onstart = () => { recognizing = true; btn.textContent = "🔴 说话中…"; };
+    rec.onresult = (e) => {
+      let finalText = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) finalText += e.results[i][0].transcript;
+      }
+      if (finalText) input.value = (input.value ? input.value + " " : "") + finalText;
+    };
+    rec.onend = () => { recognizing = false; btn.textContent = "🎤"; };
+    rec.onerror = () => { recognizing = false; btn.textContent = "🎤"; };
+    rec.start();
+  };
+}
+
 /* ---------------- 联网状态 ---------------- */
 function updateNetStatus() {
   const badge = $("#net-status");
@@ -821,12 +1163,21 @@ async function init() {
     saveSetting("types", b.dataset.types);
     state.settings.types = b.dataset.types;
   });
+  $$("#seg-feedback .seg-btn").forEach((b) => b.onclick = () => {
+    $$("#seg-feedback .seg-btn").forEach((x) => x.classList.remove("active"));
+    b.classList.add("active");
+    saveSetting("feedbackMode", b.dataset.feedback);
+    state.settings.feedbackMode = b.dataset.feedback;
+  });
   $("#btn-generate").onclick = onGenerate;
   $("#btn-upload-txt").onclick = () => $("#upload-file").click();
   $("#upload-file").onchange = onUploadTxt;
   $("#btn-submit").onclick = onSubmit;
   $("#btn-next").onclick = onNext;
+  $("#btn-ask-ai").onclick = onAskToggle;
+  $("#btn-ask-send").onclick = onAskSend;
   $("#btn-restart").onclick = () => startQuiz(state.currentSet, "sequence");
+  $("#btn-transfer").onclick = openTransferTest;
   $("#btn-back-home").onclick = () => { showView("home"); renderLastSet(); };
   $("#btn-settings").onclick = () => { showView("settings"); renderSettings(); };
   $("#btn-data").onclick = () => { showView("data"); renderDataPage(); };
@@ -851,6 +1202,11 @@ async function init() {
   window.addEventListener("online", updateNetStatus);
   window.addEventListener("offline", updateNetStatus);
   updateNetStatus();
+
+  // 语音输入（不支持的浏览器自动隐藏 🎤）
+  setupVoiceInput("btn-voice-supplement", "supplement-text");
+  setupVoiceInput("btn-voice-ask", "ask-ai-input");
+  setupVoiceInput("btn-voice-transfer", "transfer-input");
 
   // 首页最近一套
   renderLastSet();

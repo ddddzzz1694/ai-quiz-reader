@@ -30,6 +30,7 @@
       <h2>把书摘变成题目</h2>
       <p class="hint">粘贴一段书摘或文章，AI 帮你出选择题，每天刷题加深记忆。</p>
       <textarea id="input-text" rows="10" placeholder="在这里粘贴书摘/文章内容，或点下方上传 txt 文件……&#10;&#10;比如：非暴力沟通四步法：观察、感受、需要、请求……"></textarea>
+      <input id="input-goal" type="text" placeholder="（选填）想达成什么目的？如：了解这本书的核心理念 / 学会这个方法怎么用" style="width:100%;padding:12px;margin:10px 0 8px;border:1px solid #ddd;border-radius:10px;font-size:14px;box-sizing:border-box">
       <div class="upload-row">
         <button id="btn-upload-txt" class="btn-secondary btn-upload">📂 上传 txt 文件</button>
         <input type="file" id="upload-file" accept=".txt,text/plain" style="display:none">
@@ -64,11 +65,19 @@
       <div id="quiz-options" class="quiz-options"></div>
       <div id="quiz-supplement" class="supplement-box">
         <textarea id="supplement-text" rows="2" placeholder="（选填）写下你为什么选这个，或说说你的理解……"></textarea>
+        <button id="btn-voice-supplement" class="btn-voice" type="button">🎤</button>
       </div>
       <div id="quiz-feedback" class="quiz-feedback" style="display:none">
         <div id="feedback-verdict" class="verdict"></div>
         <div id="feedback-explanation" class="explanation"></div>
         <div id="feedback-ai" style="display:none"></div>
+        <button id="btn-ask-ai" class="btn-secondary" style="margin-top:10px;display:none">💬 追问 AI</button>
+        <div id="ask-ai-box" style="display:none;margin-top:8px">
+          <textarea id="ask-ai-input" rows="2" placeholder="对这个题目/解析还有疑问？直接问……"></textarea>
+          <button id="btn-voice-ask" class="btn-voice" type="button">🎤</button>
+          <button id="btn-ask-send" class="btn-primary" style="margin-top:6px">发送</button>
+          <div id="ask-ai-history" class="ask-history" style="margin-top:8px"></div>
+        </div>
       </div>
       <button id="btn-submit" class="btn-primary btn-big">提交答案</button>
       <button id="btn-next" class="btn-secondary" style="display:none">下一题 →</button>
@@ -77,6 +86,7 @@
       <h2>🎉 这套刷完了！</h2>
       <p id="done-stats"></p>
       <button id="btn-restart" class="btn-primary">再刷一遍</button>
+      <button id="btn-transfer" class="btn-secondary">🧠 远迁移测试</button>
       <button id="btn-back-home" class="btn-secondary">回到首页</button>
     </div>
   </section>
@@ -113,6 +123,13 @@
       <div class="seg" id="seg-types">
         <button data-types="choice" class="seg-btn active">纯选择</button>
         <button data-types="choice-judge" class="seg-btn">选择+判断</button>
+      </div>
+
+      <hr>
+      <label class="field-label">AI 点评时机</label>
+      <div class="seg" id="seg-feedback">
+        <button data-feedback="now" class="seg-btn active">每题当时点评</button>
+        <button data-feedback="after" class="seg-btn">刷完统一评</button>
       </div>
 
       <hr>
