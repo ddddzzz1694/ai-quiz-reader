@@ -410,11 +410,14 @@ function renderQuiz() {
 
   const box = $("#quiz-options");
   box.innerHTML = "";
+  // 判断题（选项为 对/错 或 是/否）：不显示 A/B 字母，直接显示文字
+  const isJudge = q.options.length === 2 && /^(对|错|是|否|正确|错误|√|×)$/.test(q.options[0] || "") && /^(对|错|是|否|正确|错误|√|×)$/.test(q.options[1] || "");
   q.options.forEach((opt, i) => {
     const letter = String.fromCharCode(65 + i);
     const btn = document.createElement("button");
     btn.className = "option-btn";
-    btn.innerHTML = `<span class="opt-letter">${letter}</span><span>${esc(opt)}</span>`;
+    btn.dataset.letter = letter;
+    btn.innerHTML = isJudge ? `<span>${esc(opt)}</span>` : `<span class="opt-letter">${letter}</span><span>${esc(opt)}</span>`;
     btn.onclick = () => {
       if (state.answered) return;
       state.selected = letter;
@@ -459,7 +462,9 @@ async function onSubmit() {
   // 界面反馈
   const feedback = $("#quiz-feedback");
   const verdict = $("#feedback-verdict");
-  verdict.textContent = correct ? "✅ 答对了！" : `❌ 答错了，正确答案是 ${q.answer}`;
+  // 判断题答案显示"对/错"，选择题显示字母
+  const ansShow = (q.options || []).length === 2 ? (q.answer === "A" ? "对" : q.answer === "B" ? "错" : q.answer) : q.answer;
+  verdict.textContent = correct ? "✅ 答对了！" : `❌ 答错了，正确答案是 ${ansShow}`;
   verdict.className = "verdict " + (correct ? "correct" : "wrong");
   $("#feedback-explanation").textContent = q.explanation || "（这题没有解析）";
   feedback.style.display = "block";
@@ -470,7 +475,7 @@ async function onSubmit() {
   // 选项着色
   $$(".option-btn").forEach((b) => {
     b.classList.add("disabled");
-    const letter = b.querySelector(".opt-letter").textContent;
+    const letter = b.dataset.letter || "";
     if (letter === q.answer) b.classList.add("correct");
     else if (letter === state.selected) b.classList.add("wrong");
   });
